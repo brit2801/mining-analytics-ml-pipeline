@@ -1,0 +1,23 @@
+{
+    "rows": 10000,
+    "columns": 13,
+    "target_column": "failure_next_7_days",
+    "failure_rate": 0.2501,
+    "equipment_type_distribution": {
+        "haul_truck": 0.2234,
+        "conveyor_belt": 0.2033,
+        "crusher": 0.1691,
+        "excavator": 0.16,
+        "drill_rig": 0.1275,
+        "ball_mill": 0.1167
+    },
+    "shift_distribution": {
+        "day": 0.5146,
+        "night": 0.4854
+    },
+    "dust_level_distribution": {
+        "medium": 0.5001,
+        "low": 0.2514,
+        "high": 0.2485
+    }
+}

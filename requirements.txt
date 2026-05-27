@@ -1,0 +1,22 @@
+# Core data science
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.5.0
+matplotlib>=3.8.0
+
+# Big data processing
+pyspark>=4.0.0
+
+# Experiment tracking and model registry basics
+mlflow>=2.20.0
+
+# API deployment
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Model persistence
+joblib>=1.4.0
+
+# Development utilities
+python-dotenv>=1.0.1
+pydantic>=2.8.0

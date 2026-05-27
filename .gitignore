@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Data generated locally
+*.parquet
+*.pkl
+*.joblib
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# OS and IDE
+.DS_Store
+.vscode/
+.idea/
