@@ -1,23 +1,23 @@
 {
-    "rows": 10000,
+    "rows": 50000,
     "columns": 13,
     "target_column": "failure_next_7_days",
-    "failure_rate": 0.2501,
+    "failure_rate": 0.2518,
     "equipment_type_distribution": {
-        "haul_truck": 0.2234,
-        "conveyor_belt": 0.2033,
-        "crusher": 0.1691,
-        "excavator": 0.16,
-        "drill_rig": 0.1275,
-        "ball_mill": 0.1167
+        "haul_truck": 0.222,
+        "conveyor_belt": 0.1995,
+        "crusher": 0.1713,
+        "excavator": 0.1587,
+        "drill_rig": 0.1301,
+        "ball_mill": 0.1184
     },
     "shift_distribution": {
-        "day": 0.5146,
-        "night": 0.4854
+        "day": 0.5197,
+        "night": 0.4803
     },
     "dust_level_distribution": {
-        "medium": 0.5001,
-        "low": 0.2514,
-        "high": 0.2485
+        "medium": 0.4996,
+        "high": 0.253,
+        "low": 0.2473
     }
 }
