@@ -4,6 +4,12 @@
 
 Train and compare machine learning models to predict whether a mining asset may fail in the next 7 days.
 
+## MLflow experiment
+
+- Experiment name: `mining_failure_prediction_experiment`
+- Tracking folder: `mlruns/`
+- Artifacts logged: confusion matrix image and trained model for each run.
+
 ## Business criterion
 
 The best model was selected by prioritizing **recall**. In predictive maintenance, a false negative is risky because it means the system did not detect a possible failure. Missing a real failure can lead to unplanned downtime, production losses, safety exposure, and higher maintenance costs.

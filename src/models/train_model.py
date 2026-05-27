@@ -1,24 +1,32 @@
 """
-Train machine learning models to predict equipment failure risk.
+Train machine learning models to predict equipment failure risk with MLflow tracking.
 
 This script reads the processed mining equipment dataset, trains three
-classification models, evaluates them, selects the best model prioritizing
-recall, and saves the final model plus a metrics report.
+classification models, evaluates them, registers metrics and artifacts in
+MLflow, selects the best model prioritizing recall, and saves the final model
+plus a Markdown metrics report.
 
 Run from the project root:
     python src/models/train_model.py
+
+Open MLflow UI from the project root:
+    mlflow ui --backend-store-uri ./mlruns --port 5000
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import joblib
+import matplotlib.pyplot as plt
+import mlflow
+import mlflow.sklearn
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
+    ConfusionMatrixDisplay,
     accuracy_score,
     confusion_matrix,
     f1_score,
@@ -34,11 +42,23 @@ from sklearn.preprocessing import StandardScaler
 RANDOM_STATE = 42
 TARGET_COLUMN = "failure_next_7_days"
 ID_COLUMN = "equipment_id"
+EXPERIMENT_NAME = "mining_failure_prediction_experiment"
 
 
 def get_project_root() -> Path:
     """Return the project root path based on this file location."""
     return Path(__file__).resolve().parents[2]
+
+
+def configure_mlflow(project_root: Path) -> None:
+    """Configure MLflow to save runs locally inside the project.
+
+    A local tracking folder keeps the project easy to run on a personal laptop
+    and easy to demonstrate in GitHub or during an interview.
+    """
+    tracking_path = project_root / "mlruns"
+    mlflow.set_tracking_uri(tracking_path.as_uri())
+    mlflow.set_experiment(EXPERIMENT_NAME)
 
 
 def load_dataset(input_path: Path) -> pd.DataFrame:
@@ -134,6 +154,46 @@ def build_models() -> Dict[str, Pipeline]:
     }
 
 
+def get_model_params_for_mlflow(model: Pipeline) -> Dict[str, Any]:
+    """Return the most important model parameters for MLflow.
+
+    This avoids logging too many internal parameters and keeps the experiment
+    easy to read for a beginner.
+    """
+    estimator = model.named_steps["model"]
+
+    if isinstance(estimator, LogisticRegression):
+        return {
+            "model_type": "LogisticRegression",
+            "max_iter": estimator.max_iter,
+            "class_weight": estimator.class_weight,
+            "random_state": estimator.random_state,
+            "solver": estimator.solver,
+            "C": estimator.C,
+        }
+
+    if isinstance(estimator, RandomForestClassifier):
+        return {
+            "model_type": "RandomForestClassifier",
+            "n_estimators": estimator.n_estimators,
+            "max_depth": estimator.max_depth,
+            "class_weight": estimator.class_weight,
+            "random_state": estimator.random_state,
+            "n_jobs": estimator.n_jobs,
+        }
+
+    if isinstance(estimator, GradientBoostingClassifier):
+        return {
+            "model_type": "GradientBoostingClassifier",
+            "n_estimators": estimator.n_estimators,
+            "learning_rate": estimator.learning_rate,
+            "max_depth": estimator.max_depth,
+            "random_state": estimator.random_state,
+        }
+
+    return {"model_type": estimator.__class__.__name__}
+
+
 def evaluate_model(model: Pipeline, X_test: pd.DataFrame, y_test: pd.Series) -> Dict[str, object]:
     """Evaluate a trained model using classification metrics."""
     y_pred = model.predict(X_test)
@@ -175,6 +235,75 @@ def format_confusion_matrix(matrix) -> str:
     )
 
 
+def save_confusion_matrix_plot(
+    matrix,
+    model_name: str,
+    output_dir: Path,
+) -> Path:
+    """Save the confusion matrix as an image so MLflow can log it as an artifact."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    file_name = model_name.lower().replace(" ", "_") + "_confusion_matrix.png"
+    output_path = output_dir / file_name
+
+    display = ConfusionMatrixDisplay(
+        confusion_matrix=matrix,
+        display_labels=["No failure", "Failure"],
+    )
+    display.plot(values_format="d")
+    plt.title(f"Confusion Matrix - {model_name}")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.close()
+
+    return output_path
+
+
+def log_run_to_mlflow(
+    model_name: str,
+    model: Pipeline,
+    metrics: Dict[str, object],
+    confusion_matrix_path: Path,
+    train_rows: int,
+    test_rows: int,
+    feature_count: int,
+) -> str:
+    """Log one model training run to MLflow."""
+    run_name = model_name.lower().replace(" ", "_")
+
+    with mlflow.start_run(run_name=run_name) as run:
+        # Tags are useful labels to understand the context of the run.
+        mlflow.set_tag("project", "mining-analytics-ml-pipeline")
+        mlflow.set_tag("model_name", model_name)
+        mlflow.set_tag("selection_metric", "recall")
+        mlflow.set_tag("business_context", "predictive maintenance")
+
+        # Parameters describe the configuration of the model and dataset split.
+        mlflow.log_params(get_model_params_for_mlflow(model))
+        mlflow.log_param("target_column", TARGET_COLUMN)
+        mlflow.log_param("train_rows", train_rows)
+        mlflow.log_param("test_rows", test_rows)
+        mlflow.log_param("feature_count", feature_count)
+        mlflow.log_param("random_state", RANDOM_STATE)
+
+        # Metrics describe model performance.
+        mlflow.log_metric("accuracy", float(metrics["accuracy"]))
+        mlflow.log_metric("precision", float(metrics["precision"]))
+        mlflow.log_metric("recall", float(metrics["recall"]))
+        mlflow.log_metric("f1_score", float(metrics["f1_score"]))
+
+        # The confusion matrix image helps explain false positives and false negatives.
+        mlflow.log_artifact(str(confusion_matrix_path), artifact_path="confusion_matrices")
+
+        # Log the trained scikit-learn pipeline as an MLflow model artifact.
+        mlflow.sklearn.log_model(
+            sk_model=model,
+            artifact_path="trained_model",
+            input_example=None,
+        )
+
+        return run.info.run_id
+
+
 def save_metrics_report(
     output_path: Path,
     results: Dict[str, Dict[str, object]],
@@ -193,6 +322,12 @@ def save_metrics_report(
         "",
         "Train and compare machine learning models to predict whether a mining "
         "asset may fail in the next 7 days.",
+        "",
+        "## MLflow experiment",
+        "",
+        f"- Experiment name: `{EXPERIMENT_NAME}`",
+        "- Tracking folder: `mlruns/`",
+        "- Artifacts logged: confusion matrix image and trained model for each run.",
         "",
         "## Business criterion",
         "",
@@ -226,7 +361,7 @@ def save_metrics_report(
     lines.extend(
         [
             "",
-            f"## Selected model",
+            "## Selected model",
             "",
             f"**{best_model_name}** was selected as the best model because it achieved "
             "the strongest recall-oriented performance among the evaluated models.",
@@ -301,6 +436,12 @@ def main() -> None:
     input_path = project_root / "data" / "processed" / "mining_equipment_processed.csv"
     model_output_path = project_root / "models" / "failure_prediction_model.pkl"
     report_output_path = project_root / "reports" / "metrics_report.md"
+    confusion_matrix_dir = project_root / "reports" / "confusion_matrices"
+
+    print("Configuring MLflow...")
+    configure_mlflow(project_root)
+    print(f"MLflow experiment: {EXPERIMENT_NAME}")
+    print(f"MLflow tracking URI: {mlflow.get_tracking_uri()}")
 
     print("Loading processed dataset...")
     df = load_dataset(input_path)
@@ -320,13 +461,33 @@ def main() -> None:
     models = build_models()
     results: Dict[str, Dict[str, object]] = {}
     trained_models: Dict[str, Pipeline] = {}
+    mlflow_run_ids: Dict[str, str] = {}
 
-    print("Training and evaluating models...")
+    print("Training, evaluating, and logging models with MLflow...")
     for model_name, model in models.items():
         print(f"- Training {model_name}...")
         model.fit(X_train, y_train)
-        results[model_name] = evaluate_model(model, X_test, y_test)
+
+        metrics = evaluate_model(model, X_test, y_test)
+        results[model_name] = metrics
         trained_models[model_name] = model
+
+        confusion_matrix_path = save_confusion_matrix_plot(
+            matrix=metrics["confusion_matrix"],
+            model_name=model_name,
+            output_dir=confusion_matrix_dir,
+        )
+
+        run_id = log_run_to_mlflow(
+            model_name=model_name,
+            model=model,
+            metrics=metrics,
+            confusion_matrix_path=confusion_matrix_path,
+            train_rows=len(X_train),
+            test_rows=len(X_test),
+            feature_count=len(feature_columns),
+        )
+        mlflow_run_ids[model_name] = run_id
 
     best_model_name = select_best_model(results)
     best_model = trained_models[best_model_name]
@@ -350,8 +511,15 @@ def main() -> None:
         test_rows=len(X_test),
     )
 
+    # Add extra information to the MLflow run of the selected model.
+    with mlflow.start_run(run_id=mlflow_run_ids[best_model_name]):
+        mlflow.set_tag("selected_as_best", "true")
+        mlflow.log_artifact(str(model_output_path), artifact_path="best_model_joblib")
+        mlflow.log_artifact(str(report_output_path), artifact_path="reports")
+
     print(f"Model saved to: {model_output_path}")
     print(f"Metrics report saved to: {report_output_path}")
+    print("MLflow artifacts saved in the local 'mlruns' folder.")
 
 
 if __name__ == "__main__":
